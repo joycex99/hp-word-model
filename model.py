@@ -6,7 +6,6 @@ import re
 args.seq_length = num steps
 rnn_size = hidden size, or num hidden units '''
 
-flags = tf.flags
 
 class Model():
     def __init__(self, args, infer=False):
@@ -15,9 +14,10 @@ class Model():
             args.batch_size = 1
             args.seq_length = 1
 
-        # add support for GRU cell; for now, only lstm
-        cell = tf.nn.rnn_cell.BasicLSTMCell(args.rnn_size, forget_bias=1.0) # forget bias was added
-
+        # TODO: add support for GRU cell; for now, only lstm
+        cell = tf.nn.rnn_cell.BasicLSTMCell(args.rnn_size, forget_bias=3.0) # forget bias was added
+        if is_training and args.keep_prob < 1: # if dropout included
+            cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=args.keep_prob)
         self.cell = cell = tf.nn.rnn_cell.MultiRNNCell([cell] * args.num_layers)
 
         self.input_data = tf.placeholder(tf.int32, [args.batch_size, args.seq_length])
@@ -28,18 +28,22 @@ class Model():
             softmax_w = tf.get_variable("softmax_w", [args.rnn_size, args.vocab_size]) # num cells in next layer (hidden) by num cells in input (vocab)
             softmax_b = tf.get_variable("softmax_b", [args.vocab_size]) # only input (vocab) connects with bias weights
 
-            # Q: why must we do this on the cpu?
             with tf.device('/cpu:0'):
-                # Q: why must embedding be the same length as num of hidden units?
-                embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size])
+                embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size], trainable=True)
+
+                # next two lines are necessary and only necessary IF using pretrained embeddings
+                self.embedding_placeholder = tf.placeholder(tf.float32, [args.vocab_size, args.rnn_size])
+                self.embedding_init = embedding.assign(self.embedding_placeholder)
+
                 # tf.split(split_dim, num_split, value) splits value along split_dim into num_split smaller tensors
                 inputs = tf.split(1, args.seq_length, tf.nn.embedding_lookup(embedding, self.input_data))
+                if args.keep_prob < 1:
+                    inputs = tf.nn.dropout(inputs, args.keep_prob)
                 inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
 
         def loop(prev, _):
             prev = tf.matmul(prev, softmax_w) + softmax_b
-            prev_symbol = tf.stop_gradient(tf.argmax(prev, 1)) # ??? tf.stop_gradient prevents individual tensor from contributing to gradients - but why argmax(prev, 1)?
-            return tf.nn.embedding_lookup(embedding, prev_symbol)
+            prev_symbol = tf.stop_gradient(tf.argmax(prev, 1)) 
 
         # https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/ops/seq2seq.py
         outputs, last_state = tf.nn.seq2seq.rnn_decoder(inputs, self.initial_state, cell, loop_function=loop if infer else None, scope='rnnlm')
@@ -58,7 +62,6 @@ class Model():
         # vs. seq2seq.sequence_loss: seq_loss returns scalar val that is average perplexity of vals
         # so if we call rf.reduce_sum(loss) / args.batch_size / args.seq_length, 
         #    why not just do seq2seq.sequence_loss / args.seq_length?
-
         self.cost = tf.reduce_sum(loss) / args.batch_size / args.seq_length 
         self.final_state = last_state 
         self.lr = tf.Variable(0.0, trainable=False)
@@ -68,9 +71,9 @@ class Model():
         optimizer = tf.train.AdamOptimizer(self.lr) # research optimizers
         self.train_op = optimizer.apply_gradients(zip(grads, tvars))
 
-    def sample(self, sess, words, vocab, num=200, prime="Harry ", sampling_type=1):
+    def sample(self, sess, words, vocab, num=200, prime="Harry "):
         state = self.cell.zero_state(1, tf.float32).eval()
-        prime = re.findall(r"\w+|\n|[^\w\s]", prime)
+        # prime = re.findall(r"\w+|\n|[^\w\s]", prime)
 
         # state gets updated with each word
         for word in prime[:-1]: # for everything up to the last word
@@ -81,35 +84,35 @@ class Model():
         def weighted_pick(weights):
             t = np.cumsum(weights) # cumulative sum over flattened array at each step
             s = np.sum(weights) 
-            return(int(np.searchsorted(t, np.random.rand(1)*s))) # ??
+            return(int(np.searchsorted(t, np.random.rand(1)*s))) 
 
         ret = ''.join(prime)
         word = prime[-1] # last word
+        prev_was_word = False
         for n in range(num): 
             x = np.zeros((1, 1)) 
             x[0, 0] = vocab[word]
-            # replacement for top two lines: x = np.array([[vocab[word]]]) 
 
             # state input is, at point of input, reflective of everything EXCEPT word
             [probs, state] = sess.run([self.probs, self.final_state], 
                                       {self.input_data: x, self.initial_state:state})
             p = probs[0] # ? what is p?
 
-            # ?? what are these sampling types?
-            # "0 to use max at each timestep, 1 to sample at each timestep, 2 to sample on spaces"
-
-            if sampling_type == 0:
-                sample = np.argmax(p)
-            elif sampling_type == 2:
-                if word == ' ':
-                    sample = weighted_pick(p)
-                else:
-                    sample = np.argmax(p) 
-            else: # default 
-                sample = weighted_pick(p)
-
+            
+            sample = weighted_pick(p)
             pred = words[sample] 
 
+            # determine if add space (ONLY NECESSARY if using pretrained word embeddings such as word2vec or GloVe)
+            # if re.match(r"^\w+$", pred): # is word, not special char
+            #     if prev_was_word:
+            #         ret += ' ' + pred 
+            #     else:
+            #         ret += pred 
+            #     prev_was_word = True
+            # else:
+            #     ret += pred 
+
+            # if embeddings are learned w/ neural net:
             ret += pred
             word = pred 
         return ret 
