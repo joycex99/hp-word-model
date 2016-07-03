@@ -52,14 +52,14 @@ class TextLoader():
             data = f.read()
         data = re.findall(r"\w+|\n|[^\w\s]", data) 
         counter = collections.Counter(data)
-        count_pairs = sorted(counter.items(), key=lambda x: -x[1]) # descending frequencing count of words
-        self.words, _ = zip(*count_pairs) # get just the words (keys of dict)
+        count_pairs = sorted(counter.items(), key=lambda x: -x[1]) # descending frequency count of words
+        self.words, _ = zip(*count_pairs) 
         self.vocab_size = len(self.words)
         self.vocab = dict(zip(self.words, range(self.vocab_size))) # word map to id based on frequency (i.e. most frequent: 0)
         with open(vocab_file, 'wb') as f:
             cPickle.dump(self.words, f) # words from most freq to least freq
         self.tensor = np.array(list(map(self.vocab.get, data))) # array: maps input data (words) to corresponding vocab id 
-        np.save(tensor_file, self.tensor) # so tensor is input to model!! 
+        np.save(tensor_file, self.tensor) # so tensor is input to model
 
     def load_preprocessed(self, vocab_file, tensor_file):
         with open(vocab_file, 'rb') as f:
@@ -113,7 +113,6 @@ class TextLoader():
         with open(os.path.join(self.data_dir, "embdict.csv"), "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                # print(row['embedding'])
                 embed_str = literal_eval(row['embedding']) # get rid of quotes around list, e.g. "['1.34', '2.76']"
 
                 # turn elements in list back to floats, e.g. ['1.34', '2.76'] => [1.34, 2.76], if error then init to zeros

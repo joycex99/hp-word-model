@@ -22,7 +22,6 @@ def main():
 	sample(args)
 
 def sample(args):
-	# saved during training
 	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as f:
 		saved_args = cPickle.load(f)
 	with open(os.path.join(args.save_dir, 'words_vocab.pkl'), 'rb') as f:

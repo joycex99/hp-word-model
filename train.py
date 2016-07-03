@@ -23,7 +23,7 @@ def main():
                        help='number of layers in the RNN')
     parser.add_argument('--batch_size', type=int, default=50,
                        help='minibatch size')
-    parser.add_argument('--seq_length', type=int, default=30, #50,
+    parser.add_argument('--seq_length', type=int, default=50, #50,
                        help='RNN sequence length, i.e. num steps to unfold')
     parser.add_argument('--num_epochs', type=int, default=50, #50,
                        help='number of epochs')
@@ -35,7 +35,8 @@ def main():
                        help='learning rate')
     parser.add_argument('--decay_rate', type=float, default=0.97,
                        help='decay rate for rmsprop')
-    parser.add_argument
+    parser.add_argument('--keep_prob', type=float, default=1.0,
+                       help='probability of keeping inputs/outputs during dropout')
     parser.add_argument('--init_from', type=str, default=None,
                        help="""continue training from saved model at this path. Path must contain files saved by previous training process: 
                             'config.pkl'        : configuration;
@@ -86,15 +87,15 @@ def train(args):
 
     with tf.Session() as sess:
         sess_start = time.time()
-        print(time.ctime(int(time.time()))) # prints start time
+        print(time.ctime(int(time.time()))) 
         tf.initialize_all_variables().run()
         saver = tf.train.Saver(tf.all_variables(), max_to_keep = 3)
         # restore model
         if args.init_from is not None:
             saver.restore(sess, ckpt.model_checkpoint_path)
 
-        # load embeddings
-        embedding = np.load(os.path.join(args.data_dir, 'embed.npy'))
+        # load embeddings IF USING PRETRAINED ONES
+        # embedding = np.load(os.path.join(args.data_dir, 'embed.npy'))
             
         for e in range(args.num_epochs):
             # update lr based on epoch, reset pointer to beginning, load state
@@ -102,7 +103,8 @@ def train(args):
             data_loader.reset_batch_pointer()
             state = model.initial_state.eval()
 
-            sess.run(model.embedding_init, feed_dict={model.embedding_placeholder: embedding})
+            # pretrained embeddings:
+            # sess.run(model.embedding_init, feed_dict={model.embedding_placeholder: embedding})
  
             for b in range(data_loader.num_batches):
                 start = time.time()

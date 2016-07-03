@@ -15,8 +15,8 @@ class Model():
             args.seq_length = 1
 
         # TODO: add support for GRU cell; for now, only lstm
-        cell = tf.nn.rnn_cell.BasicLSTMCell(args.rnn_size, forget_bias=3.0) # forget bias was added
-        if is_training and args.keep_prob < 1: # if dropout included
+        cell = tf.nn.rnn_cell.BasicLSTMCell(args.rnn_size, forget_bias=1.0) # forget bias was added
+        if args.keep_prob < 1: # if dropout included
             cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=args.keep_prob)
         self.cell = cell = tf.nn.rnn_cell.MultiRNNCell([cell] * args.num_layers)
 
@@ -32,14 +32,14 @@ class Model():
                 embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size], trainable=True)
 
                 # next two lines are necessary and only necessary IF using pretrained embeddings
-                self.embedding_placeholder = tf.placeholder(tf.float32, [args.vocab_size, args.rnn_size])
-                self.embedding_init = embedding.assign(self.embedding_placeholder)
+                # self.embedding_placeholder = tf.placeholder(tf.float32, [args.vocab_size, args.rnn_size])
+                # self.embedding_init = embedding.assign(self.embedding_placeholder)
 
-                # tf.split(split_dim, num_split, value) splits value along split_dim into num_split smaller tensors
-                inputs = tf.split(1, args.seq_length, tf.nn.embedding_lookup(embedding, self.input_data))
+                inputs = tf.nn.embedding_lookup(embedding, self.input_data)
                 if args.keep_prob < 1:
                     inputs = tf.nn.dropout(inputs, args.keep_prob)
-                inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
+                # tf.split(split_dim, num_split, value) splits value along split_dim into num_split smaller tensors
+                inputs = [tf.squeeze(input_, [1]) for input_ in tf.split(1, args.seq_length, inputs)]
 
         def loop(prev, _):
             prev = tf.matmul(prev, softmax_w) + softmax_b
@@ -59,9 +59,6 @@ class Model():
             [tf.ones([args.batch_size * args.seq_length])] # same length as logits
         )
 
-        # vs. seq2seq.sequence_loss: seq_loss returns scalar val that is average perplexity of vals
-        # so if we call rf.reduce_sum(loss) / args.batch_size / args.seq_length, 
-        #    why not just do seq2seq.sequence_loss / args.seq_length?
         self.cost = tf.reduce_sum(loss) / args.batch_size / args.seq_length 
         self.final_state = last_state 
         self.lr = tf.Variable(0.0, trainable=False)
@@ -73,7 +70,7 @@ class Model():
 
     def sample(self, sess, words, vocab, num=200, prime="Harry "):
         state = self.cell.zero_state(1, tf.float32).eval()
-        # prime = re.findall(r"\w+|\n|[^\w\s]", prime)
+        prime = re.findall(r"\w+|\n|[^\w\s]", prime)
 
         # state gets updated with each word
         for word in prime[:-1]: # for everything up to the last word
@@ -98,7 +95,6 @@ class Model():
                                       {self.input_data: x, self.initial_state:state})
             p = probs[0] # ? what is p?
 
-            
             sample = weighted_pick(p)
             pred = words[sample] 
 
